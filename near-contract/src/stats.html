@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<head>
+    <style>
+        #donations_tab {
+            font-family: Arial, Helvetica, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        #donations_tab td, #donations_tab th {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        #donations_tab tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+
+        #donations_tab tr:hover {
+            background-color: #ddd;
+        }
+
+        #donations_tab th {
+            padding-top: 12px;
+            padding-bottom: 12px;
+            text-align: left;
+            background-color: black;
+            color: white;
+        }
+
+        div {
+            border-radius: 5px;
+            padding: 20px;
+        }
+
+        body {
+            background-color: #f2f2f2;
+            margin: 0;
+        }
+
+        #sign_out {
+            width: 100px;
+            background-color: black;
+            color: white;
+            padding: 14px 20px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            float: right;
+        }
+
+        #sign_out:hover {
+            background-color: #2d2d2d;
+        }
+
+        #account_id {
+            padding: 0 10px 0 0;
+            float: right;
+        }
+
+        .change {
+            text-decoration: none;
+            display: inline-block;
+            padding: 8px 16px;
+        }
+
+        .change:hover {
+            background-color: #ddd;
+            color: black;
+        }
+
+        #previous_button {
+            width: 120px;
+            background-color: black;
+            color: white;
+            padding: 14px 20px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #previous_button:hover {
+            background-color: #2d2d2d;
+        }
+
+        #next_button {
+            width: 120px;
+            background-color: black;
+            color: white;
+            padding: 14px 20px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #next_button:hover {
+            background-color: #2d2d2d;
+        }
+
+        .round {
+            border-radius: 50%;
+        }
+    </style>
+    <title>Stats</title>
+</head>
+<body>
+
+<div>
+    <button id="sign_out">Sign Out</button>
+    <p id="account_id">You are not signed in</p>
+</div>
+
+<div>
+    <table id="donations_tab">
+        <tr>
+            <th>From</th>
+            <th>Message</th>
+            <th>Amount</th>
+        </tr>
+    </table>
+</div>
+
+<div>
+    <button class="change" id="previous_button">&laquo; Previous</button>
+    <button class="change" id="next_button">Next &raquo;</button>
+</div>
+
+<div>
+    <div id="errors_form"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/near-api-js@1.1.0/dist/near-api-js.min.js"></script>
+<script>
+    const logs = true
+    const logger = function () {
+        if (logs) {
+            console.log(...arguments)
+        }
+    }
+    const app_name = 'my-donations'
+    const contract_name = 'qawsew.testnet'
+    const contract_methods = ['get_donation', 'donations_sequence']
+    const contract_view_methods = ['get_donation', 'donations_sequence']
+    const contract_change_methods = []
+    const url_params = new URLSearchParams(window.location.search);
+    let offset = +url_params.get('offset') ? +url_params.get('offset') : +0;
+    const change_offset = (n)=>{
+        url_params.set('offset', offset+=n)
+        logger('set offset: ', offset)
+        window.location.search = url_params.toString();
+    }
+    const donations_tab = document.getElementById('donations_tab')
+    const account_id_field = document.getElementById('account_id')
+    const bt_sign_out = document.getElementById('sign_out')
+    const errors_form = document.getElementById('errors_form')
+    const limit = 20
+
+    const previous_button = document.getElementById('previous_button')
+    previous_button.addEventListener('click', ()=>{
+        change_offset(-limit)
+    })
+
+    const next_button = document.getElementById('next_button')
+    next_button.addEventListener('click', ()=>{
+        change_offset(limit)
+    })
+
+
+    const add_stat_row = (donation) => {
+        let row = donations_tab.insertRow();
+
+        let cell = row.insertCell();
+        cell.innerHTML = donation.account_id;
+        cell = row.insertCell();
+        cell.innerHTML = donation.msg.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        cell = row.insertCell();
+        cell.innerHTML = nearApi.utils.format.formatNearAmount(donation.sum) + ' NEAR';
+    }
+
+    const near_cfg = {
+        keyStore: new nearApi.keyStores.BrowserLocalStorageKeyStore(),
+        networkId: 'testnet',
+        nodeUrl: "https://rpc.testnet.near.org",
+        walletUrl: "https://wallet.testnet.near.org",
+        helperUrl: "https://helper.testnet.near.org",
+        explorerUrl: "https://explorer.testnet.near.org",
+    }
+
+    nearApi.connect(near_cfg).then((nearConnection) => {
+        // create wallet connection
+        const wallet = new nearApi.WalletConnection(nearConnection, app_name);
+
+        bt_sign_out.addEventListener('click', (e) => {
+            if (wallet.isSignedIn()) {
+                account_id_field.innerHTML = 'You are not signed in'
+                bt_sign_out.innerHTML = 'Sign In'
+                wallet.signOut()
+            } else {
+                wallet.requestSignIn({
+                    contractId: contract_name,
+                    methodNames: contract_methods
+                });
+            }
+        })
+
+        logger('wallet.isSignedIn: ', wallet.isSignedIn())
+        logger('signed account: ', wallet.getAccountId())
+
+        // connect to a NEAR smart contract
+        const contract = new nearApi.Contract(wallet.account(), wallet.getAccountId(), {
+            viewMethods: contract_view_methods,
+            changeMethods: contract_change_methods
+        });
+
+        if (!wallet.isSignedIn()) {
+            wallet.requestSignIn({
+                contractId: contract_name,
+                methodNames: contract_methods
+            });
+
+            return
+        } else {
+            bt_sign_out.innerHTML = 'Sign Out'
+            account_id_field.innerHTML = wallet.getAccountId()
+        }
+
+        contract.donations_sequence().then(async (donations_sequence_res) => {
+            logger("donations sequence: ", donations_sequence_res);
+            let counter = 0
+
+            if (offset >= donations_sequence_res) {
+                errors_form.textContent = 'not found donations'
+                return
+            }
+
+            for (let i = offset; i < donations_sequence_res; i++) {
+                logger("get_donation: ", i);
+                await contract.get_donation({donation_id: i.toString()})
+                    .then((res) => {
+                        logger(res);
+                        add_stat_row(res)
+                    }).catch((err) => {
+                        logger(err);
+                        errors_form.textContent = 'err on request donation with id ' + i.toString() + ' err ' + err
+                    });
+                counter++
+                if (counter >= limit) {
+                    break
+                }
+            }
+        }).catch((err) => {
+            logger(err);
+            errors_form.textContent = 'looks like you dont have donation contract on ' + wallet.getAccountId() + ' account'
+        })
+    })
+</script>
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<head>
+    <style>
+        div {
+            border-radius: 5px;
+            padding: 20px;
+        }
+
+        body {
+            margin: 0;
+        }
+
+        .popout {
+            font-family: Futura, sans-serif;
+            font-weight: 900;
+            font-size: 36px;
+            padding: 80px;
+            text-align: center;
+        }
+        @-webkit-keyframes ani {
+            0% {
+                transform: translate3d(0, 0, 0);
+                text-shadow: 0em 0em 0 lightblue;
+                color: black;
+            }
+            30% {
+                transform: translate3d(0, 0, 0);
+                text-shadow: 0em 0em 0 lightblue;
+                color: black;
+            }
+            70% {
+                transform: translate3d(0.08em, -0.08em, 0);
+                text-shadow: -0.08em 0.08em lightblue;
+                color: black;
+            }
+            100% {
+                transform: translate3d(0.08em, -0.08em, 0);
+                text-shadow: -0.08em 0.08em lightblue;
+                color: black;
+            }
+        }
+        @keyframes ani {
+            0% {
+                transform: translate3d(0, 0, 0);
+                text-shadow: 0em 0em 0 lightblue;
+                color: black;
+            }
+            30% {
+                transform: translate3d(0, 0, 0);
+                text-shadow: 0em 0em 0 lightblue;
+                color: black;
+            }
+            70% {
+                transform: translate3d(0.08em, -0.08em, 0);
+                text-shadow: -0.08em 0.08em lightblue;
+                color: black;
+            }
+            100% {
+                transform: translate3d(0.08em, -0.08em, 0);
+                text-shadow: -0.08em 0.08em lightblue;
+                color: black;
+            }
+        }
+        .popout span {
+            position: relative;
+            display: inline-block;
+            -webkit-animation: ani 1s infinite alternate cubic-bezier(0.86, 0, 0.07, 1);
+            animation: ani 1s infinite alternate cubic-bezier(0.86, 0, 0.07, 1);
+        }
+        .popout span:nth-last-child(1n) {
+            -webkit-animation-delay: -0.1666666667s;
+            animation-delay: -0.1666666667s;
+        }
+        .popout span:nth-last-child(2n) {
+            -webkit-animation-delay: -0.3333333333s;
+            animation-delay: -0.3333333333s;
+        }
+        .popout span:nth-last-child(3n) {
+            -webkit-animation-delay: -0.5s;
+            animation-delay: -0.5s;
+        }
+    </style>
+    <title>Alerts</title>
+</head>
+<body>
+
+
+<p class="popout">
+    <span id="donation_name"></span><br>
+    <span id="donation_sum"></span><br>
+    <br>
+    <span id="donation_msg">️</span>
+</p>
+
+<script src="https://cdn.jsdelivr.net/npm/near-api-js@1.1.0/dist/near-api-js.min.js"></script>
+<script>
+    const logs = true
+    const logger = function () {
+        if (logs) {
+            console.log(...arguments)
+        }
+    }
+    const url = new URL(window.location);
+    const url_params = new URLSearchParams(window.location.search);
+    const account_id = url_params.get('account_id') ? url_params.get('account_id') : alert('account_id in params required');
+    let to_last = (url_params.get('to_last') === 'true');
+    logger('to_last: ', to_last)
+    const contract_name = account_id
+    const contract_view_methods = ['get_donation', 'donations_sequence']
+    const contract_change_methods = []
+    let donation_id = +url_params.get('donation_id') ? +url_params.get('donation_id') : +0;
+    let donations_sequence_res = 0
+    const set_donation_id = (n)=>{
+        donation_id = n
+
+        logger('set donations_sequence_res: ', donation_id)
+
+        url_params.set('donation_id', donation_id)
+        url_params.set('to_last', false.toString())
+
+        url.search = url_params.toString()
+
+        window.history.pushState(null, '', url);
+    }
+    const donations = []
+    const donation_name = document.getElementById('donation_name')
+    const donation_sum = document.getElementById('donation_sum')
+    const donation_msg = document.getElementById('donation_msg')
+
+    const near_cfg = {
+        keyStore: new nearApi.keyStores.BrowserLocalStorageKeyStore(),
+        networkId: 'testnet',
+        nodeUrl: "https://rpc.testnet.near.org",
+        walletUrl: "https://wallet.testnet.near.org",
+        helperUrl: "https://helper.testnet.near.org",
+        explorerUrl: "https://explorer.testnet.near.org",
+    }
+
+    nearApi.connect(near_cfg).then(async (nearConnection) => {
+        const account = await nearConnection.account(account_id);
+
+        const contract = new nearApi.Contract(account, contract_name, {
+            viewMethods: contract_view_methods,
+            changeMethods: contract_change_methods
+        });
+
+        setInterval(()=>{
+            if (donations.length === 0) {
+                donation_name.textContent = ''
+                donation_sum.textContent = ''
+                donation_msg.textContent = ''
+                return
+            }
+
+            let donation = donations.shift()
+
+            donation_name.textContent = donation.account_id
+            donation_sum.textContent = nearApi.utils.format.formatNearAmount(donation.sum) + ' NEAR'
+            donation_msg.textContent = donation.msg
+        }, 10000)
+
+        setInterval(() => {
+            contract.donations_sequence().then(async (ds) => {
+                donations_sequence_res = ds
+
+                if (to_last) {
+                    set_donation_id(donations_sequence_res)
+                    to_last = false
+                    return
+                }
+
+                logger("donations sequence: ", donations_sequence_res);
+
+                if (donation_id >= donations_sequence_res) {
+                    logger('not found donations');
+                    return
+                }
+
+                let from = donation_id
+                donation_id = donations_sequence_res
+
+                for (let i = from; i < donations_sequence_res; i++) {
+                    logger("get_donation: ", i);
+                    let donation = await contract.get_donation({donation_id: i.toString()})
+
+                    donation.donations_sequence_res = donations_sequence_res
+
+                    donations.push(donation)
+                }
+
+                set_donation_id(donations_sequence_res)
+            })
+        }, 5000)
+    })
+</script>
+</body>
+</html>
